@@ -5,7 +5,7 @@
 [![reward](https://make.fun/badge/news-image-20261120/Goatleaf12/makefun-news-image-1120/reward.svg)](https://make.fun/bounty/news-image-20261120?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261120)
 
 One image that sums up the world's news of **Friday 20 November 2026**:
-a newspaper front page with 45 stories — three illustrated leads, ten
+a newspaper front page with 50 stories — three illustrated leads, ten
 illustrated grid stories, a world map with the thirteen illustrated
 stories pinned on it, and thirty-two more stories in the ALSO list.
 Every story happened, or was first reported, on that Friday; a

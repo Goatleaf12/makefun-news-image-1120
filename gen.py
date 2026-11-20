@@ -1,311 +1,273 @@
 #!/usr/bin/env python3
-"""The World in One Day - Friday 20 November 2026.
-
-Draws a complete newspaper front page (1024x1024 PNG) with PIL:
-masthead, day-in-numbers strip, region count bar, three illustrated
-lead stories, ten illustrated grid stories, a flat world map with the
-illustrated stories pinned, a 32-item ALSO list, a DATE CHECK box and
-a footer.  Data-driven: every story is a dict, scenes are painted by
-name from small vector primitives.  Deterministic: no randomness, no
-network, no clock.  Fonts: Liberation Serif + Liberation Sans only.
-"""
+"""The World in One Day - Friday 20 November 2026 (v2).
+One-page newspaper: 50 stories, 7 regions, 13 illustrated.
+Deterministic: fixed data, fixed fonts, no randomness, no network."""
 from PIL import Image, ImageDraw, ImageFont
+import math
+
+SER = "/usr/share/fonts/truetype/liberation/LiberationSerif-%s.ttf"
+SAN = "/usr/share/fonts/truetype/liberation/LiberationSans-%s.ttf"
+
+def SF(sz):  return ImageFont.truetype(SER % "Bold", sz)
+def SI(sz):  return ImageFont.truetype(SER % "Italic", sz)
+def SB(sz):  return ImageFont.truetype(SAN % "Bold", sz)
+def NR(sz):  return ImageFont.truetype(SAN % "Regular", sz)
+def NB(sz):  return ImageFont.truetype(SAN % "Bold", sz)
+def NI(sz):  return ImageFont.truetype(SAN % "Italic", sz)
 
 W, H = 1024, 1024
-BG = (247, 241, 227)
-INK = (26, 23, 16)
-RED = (164, 32, 24)
-DARKRED = (122, 22, 16)
-GREY = (96, 90, 78)
-RULE = (26, 23, 16)
-CARD = (252, 249, 240)
+BG    = (246, 241, 228)
+CARD  = (253, 250, 242)
+INK   = (26, 24, 20)
+RED   = (178, 32, 36)
+GREY  = (110, 102, 88)
 WHITE = (255, 255, 255)
+DARK  = (24, 34, 52)
 
-FD = "/usr/share/fonts/truetype/liberation/"
-def F(name, size):
-    return ImageFont.truetype(FD + name, size)
-def SB(s): return F("LiberationSerif-Bold.ttf", s)
-def SR(s): return F("LiberationSerif-Regular.ttf", s)
-def SI(s): return F("LiberationSerif-Italic.ttf", s)
-def NB(s): return F("LiberationSans-Bold.ttf", s)
-def NR(s): return F("LiberationSans-Regular.ttf", s)
-def NI(s): return F("LiberationSans-Italic.ttf", s)
+def tw(d, s, f):
+    return d.textlength(s, font=f)
 
-def tw(d, s, font):
-    return d.textlength(s, font=font)
-
-def wrap(d, s, font, maxw):
-    words, lines, cur = s.split(), [], ""
-    for w_ in words:
-        t = (cur + " " + w_).strip()
-        if tw(d, t, font) <= maxw or not cur:
+def wrap(d, s, f, maxw):
+    out, cur = [], ""
+    for word in s.split():
+        t = (cur + " " + word).strip()
+        if tw(d, t, f) <= maxw or not cur:
             cur = t
         else:
-            lines.append(cur); cur = w_
-    if cur: lines.append(cur)
-    return lines
+            out.append(cur); cur = word
+    if cur:
+        out.append(cur)
+    return out
 
-def spaced(d, xy, s, font, fill, gap=2):
+def spaced(d, xy, s, f, fill, gap=2):
     x, y = xy
     for ch in s:
-        d.text((x, y), ch, font=font, fill=fill)
-        x += tw(d, ch, font) + gap
+        d.text((x, y), ch, font=f, fill=fill)
+        x += tw(d, ch, f) + gap
     return x - gap
 
-def spaced_w(d, s, font, gap=2):
-    return sum(tw(d, ch, font) + gap for ch in s) - gap
+def fit1(d, s, f, maxw):
+    """Force s onto one line, dropping trailing words if needed."""
+    while s and tw(d, s, f) > maxw:
+        s = s.rsplit(" ", 1)[0]
+    return s
 
-def chip(d, box, s, bgc, fgc=None, font=None):
-    font = font or NB(11)
-    fgc = fgc or WHITE
-    w_ = tw(d, s, font) + 14
-    x0, y0 = box
-    d.rounded_rectangle([x0, y0, x0 + w_, y0 + 20], 4, fill=bgc)
-    d.text((x0 + 7, y0 + 4), s, font=font, fill=fgc)
-    return w_
+def chip(d, xy, s, fill):
+    x, y = xy
+    w_ = tw(d, s, NB(10)) + 14
+    d.rounded_rectangle([x, y, x + w_, y + 17], 4, fill=fill)
+    d.text((x + 7, y + 3), s, font=NB(10), fill=WHITE)
 
 # ---------------------------------------------------------------- scenes
-def scene_base(w_, h_, top, bot):
+def base(w_, h_, top, bot):
     img = Image.new("RGB", (w_, h_), top)
-    dd = ImageDraw.Draw(img)
-    for i in range(h_):
-        t = i / max(1, h_ - 1)
-        dd.line([(0, i), (w_, i)], fill=tuple(
-            int(top[c] + (bot[c] - top[c]) * t) for c in range(3)))
-    return img, dd
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, int(h_ * 0.62), w_, h_], fill=bot)
+    return img, d
 
 def sc_cyclone(w_, h_):
-    img, d = scene_base(w_, h_, (16, 52, 74), (30, 92, 110))
-    cx, cy = int(w_ * 0.34), int(h_ * 0.46)
-    for r in (52, 40, 29, 19):
-        d.arc([cx - r, cy - r * 0.72, cx + r, cy + r * 0.72], 300, 130, fill=(210, 232, 238), width=5)
-        d.arc([cx - r, cy - r * 0.72, cx + r, cy + r * 0.72], 120, 300, fill=(160, 205, 218), width=4)
-    d.ellipse([cx - 8, cy - 6, cx + 8, cy + 6], fill=(238, 246, 248))
-    d.polygon([(int(w_ * 0.62), h_), (int(w_ * 0.78), int(h_ * 0.30)),
-               (int(w_ * 0.92), int(h_ * 0.42)), (w_, int(h_ * 0.55)), (w_, h_)],
-              fill=(196, 172, 120))
-    d.line([(int(w_ * 0.62), h_), (int(w_ * 0.78), int(h_ * 0.30)),
-            (int(w_ * 0.92), int(h_ * 0.42)), (w_, int(h_ * 0.55))], fill=(230, 214, 160), width=2)
-    for i in range(9):
-        x = int(w_ * 0.55) + i * 16
-        d.line([(x, 6), (x - 7, 22)], fill=(170, 215, 228), width=2)
-    for i in range(4):
-        y = int(h_ * 0.72) + i * 7
-        d.arc([int(w_ * 0.06), y, int(w_ * 0.30), y + 12], 180, 330, fill=(190, 224, 232), width=2)
-    chip(d, (w_ - 118, h_ - 28), "GUSTS 110 KM/H", (10, 30, 44))
+    img, d = base(w_, h_, (70, 110, 150), (44, 84, 120))
+    cx, cy = int(w_ * 0.30), int(h_ * 0.46)
+    for r, col in [(46, (225, 232, 238)), (34, (200, 214, 228)), (22, (240, 244, 248))]:
+        d.arc([cx - r, cy - r, cx + r, cy + r], 20, 300, fill=col, width=7)
+    d.ellipse([cx - 7, cy - 7, cx + 7, cy + 7], fill=(250, 250, 250))
+    for i in range(5):
+        x = int(w_ * (0.55 + 0.09 * i))
+        d.line([(x, int(h_ * 0.18)), (x - 8, int(h_ * 0.52))], fill=(170, 205, 235), width=3)
+    d.polygon([(int(w_ * 0.72), h_), (int(w_ * 0.80), int(h_ * 0.55)),
+               (int(w_ * 0.88), h_)], fill=(52, 96, 60))
+    d.rectangle([int(w_ * 0.60), int(h_ * 0.80), w_, h_], fill=(214, 196, 150))
+    chip(d, (8, 6), "300,000+ EVACUATED", (10, 40, 60))
     return img
 
 def sc_missiles(w_, h_):
-    img, d = scene_base(w_, h_, (10, 14, 38), (34, 38, 74))
-    for (sx, sy, sr) in [(30, 18, 2), (90, 30, 1), (150, 12, 2), (230, 26, 1), (300, 16, 2), (60, 44, 1), (200, 48, 1)]:
-        if sx < w_:
-            d.ellipse([sx, sy, sx + sr * 2, sy + sr * 2], fill=(220, 224, 240))
-    gy = int(h_ * 0.78)
-    for bx, bw, bh in [(0, 42, 34), (46, 30, 48), (80, 52, 28), (136, 34, 56), (174, 46, 36),
-                       (224, 30, 50), (258, 54, 30), (316, 36, 44)]:
-        if bx < w_:
-            d.rectangle([bx, gy - bh, bx + bw, gy], fill=(16, 18, 34))
-            for wy in range(gy - bh + 6, gy - 6, 10):
-                for wx in range(bx + 5, bx + bw - 5, 11):
-                    if (wx * 7 + wy * 13) % 5 < 2:
-                        d.rectangle([wx, wy, wx + 4, wy + 5], fill=(250, 205, 92))
-    d.rectangle([0, gy, w_, h_], fill=(12, 12, 26))
-    for tx, col in [(int(w_ * 0.30), (255, 150, 60)), (int(w_ * 0.62), (255, 120, 50))]:
-        for r in (16, 10, 5):
-            d.ellipse([tx - r, gy - 6 - r, tx + r, gy - 6 + r], fill=col if r == 5 else (200, 80, 40))
-        d.line([(tx - 26, gy - 44), (tx, gy - 8)], fill=(255, 190, 110), width=2)
-        d.line([(tx + 30, gy - 50), (tx + 2, gy - 8)], fill=(255, 190, 110), width=2)
-    for i, fx in enumerate(range(int(w_ * 0.14), w_, 76)):
-        fy = gy - 62 - (i % 3) * 14
-        d.line([(fx - 30, fy - 18), (fx + 26, fy + 10)], fill=(240, 200, 130), width=2)
-        d.ellipse([fx + 24, fy + 8, fx + 30, fy + 14], fill=(255, 220, 150))
-    chip(d, (10, 8), "01:25 LOCAL - 7 WAVES", (88, 16, 12))
-    chip(d, (w_ - 96, 8), "~30 MISSILES", (240, 238, 230), INK)
+    img, d = base(w_, h_, (26, 28, 48), (16, 16, 30))
+    for x, y in [(30, 14), (90, 26), (170, 10), (250, 22), (60, 34), (210, 36)]:
+        d.ellipse([x, y, x + 3, y + 3], fill=(220, 220, 235))
+    for i, bx in enumerate([0.08, 0.30, 0.52, 0.74]):
+        x = int(w_ * bx); bh = int(h_ * (0.30 + 0.07 * (i % 3)))
+        d.rectangle([x, h_ - bh, x + int(w_ * 0.16), h_], fill=(10, 10, 20))
+        for wy in range(h_ - bh + 6, h_ - 6, 9):
+            d.rectangle([x + 6, wy, x + 10, wy + 4], fill=(240, 200, 90))
+    d.rectangle([int(w_ * 0.40), int(h_ * 0.86), int(w_ * 0.62), h_], fill=(8, 8, 16))
+    d.line([(int(w_ * 0.44), int(h_ * 0.86)), (int(w_ * 0.51), int(h_ * 0.60)),
+            (int(w_ * 0.58), int(h_ * 0.86))], fill=(8, 8, 16), width=5)
+    for sx, sy, ex, ey in [(0.06, 0.06, 0.34, 0.52), (0.22, 0.03, 0.47, 0.50),
+                           (0.90, 0.05, 0.63, 0.52), (0.72, 0.02, 0.56, 0.48)]:
+        d.line([(int(w_ * sx), int(h_ * sy)), (int(w_ * ex), int(h_ * ey))],
+               fill=(255, 176, 84), width=3)
+        d.ellipse([int(w_ * ex) - 4, int(h_ * ey) - 4, int(w_ * ex) + 4, int(h_ * ey) + 4],
+                  fill=(255, 120, 60))
+    chip(d, (8, 6), "~30 MISSILES - 7 WAVES", (52, 14, 14))
     return img
 
 def sc_cop31(w_, h_):
-    img, d = scene_base(w_, h_, (238, 226, 196), (214, 188, 150))
-    d.ellipse([int(w_ * 0.06), 10, int(w_ * 0.06) + 34, 44], fill=(240, 176, 64))
-    for bx, bw, bh in [(0, 60, 30), (66, 44, 42), (116, 70, 26), (250, 52, 38), (308, 60, 28)]:
-        if bx < w_:
-            d.rectangle([bx, h_ - bh, bx + bw, h_], fill=(120, 96, 74))
-            d.polygon([(bx, h_ - bh), (bx + bw // 2, h_ - bh - 10), (bx + bw, h_ - bh)], fill=(92, 70, 52))
-    gx, gy, gr = int(w_ * 0.60), int(h_ * 0.44), 30
-    d.ellipse([gx - gr, gy - gr, gx + gr, gy + gr], fill=(64, 128, 168))
-    d.polygon([(gx - 20, gy - 12), (gx - 4, gy - 18), (gx - 2, gy - 4), (gx - 16, gy + 2)], fill=(96, 168, 96))
-    d.polygon([(gx + 4, gy + 6), (gx + 20, gy + 2), (gx + 22, gy + 16), (gx + 8, gy + 18)], fill=(96, 168, 96))
-    tx = int(w_ * 0.80)
-    d.rounded_rectangle([tx, 12, tx + 16, h_ - 26], 8, outline=(164, 32, 24), width=3)
-    d.rectangle([tx + 5, int(h_ * 0.52), tx + 11, h_ - 28], fill=(164, 32, 24))
-    d.ellipse([tx - 5, h_ - 34, tx + 21, h_ - 8], outline=(164, 32, 24), width=3)
-    d.rectangle([tx + 2, h_ - 28, tx + 14, h_ - 14], fill=(164, 32, 24))
-    chip(d, (10, h_ - 28), "FINAL DAY - DEADLOCK", (122, 22, 16))
-    chip(d, (int(w_ * 0.36), 8), "$120BN FINANCE GAP", (26, 23, 16))
+    img, d = base(w_, h_, (196, 168, 110), (150, 128, 82))
+    d.rectangle([int(w_ * 0.06), int(h_ * 0.30), int(w_ * 0.94), int(h_ * 0.34)], fill=(90, 70, 40))
+    cols = [(200, 60, 50), (60, 110, 180), (240, 190, 60), (70, 150, 80), (150, 80, 160)]
+    for i, fx in enumerate([0.10, 0.30, 0.50, 0.70, 0.90]):
+        x = int(w_ * fx)
+        d.line([(x, int(h_ * 0.32)), (x, int(h_ * 0.62))], fill=(70, 56, 32), width=2)
+        d.rectangle([x, int(h_ * 0.36), x + 26, int(h_ * 0.50)], fill=cols[i])
+    tx0, ty0, tx1, ty1 = int(w_ * 0.30), int(h_ * 0.66), int(w_ * 0.70), int(h_ * 0.94)
+    d.rectangle([tx0, ty0, tx1, ty1], fill=(240, 236, 224))
+    d.line([(tx0 + 10, ty0 + 12), (tx1 - 10, ty0 + 12)], fill=(150, 146, 132), width=3)
+    d.line([(tx0 + 10, ty0 + 22), (tx1 - 26, ty0 + 22)], fill=(150, 146, 132), width=3)
+    d.line([(tx0 + 8, ty1 - 8), (tx1 - 8, ty0 + 6)], fill=RED, width=4)
+    chip(d, (8, 6), "FINAL DAY - NO DEAL", (66, 40, 8))
     return img
 
 def sc_selloff(w_, h_):
-    img, d = scene_base(w_, h_, (24, 22, 30), (40, 30, 40))
-    for gx in range(20, w_, 34):
-        d.line([(gx, 6), (gx, h_ - 6)], fill=(58, 54, 66), width=1)
-    for gy in range(10, h_, 20):
-        d.line([(6, gy), (w_ - 6, gy)], fill=(58, 54, 66), width=1)
-    pts = [(8, int(h_ * 0.22)), (int(w_ * 0.22), int(h_ * 0.30)), (int(w_ * 0.40), int(h_ * 0.26)),
-           (int(w_ * 0.56), int(h_ * 0.48)), (int(w_ * 0.72), int(h_ * 0.55)), (int(w_ * 0.90), int(h_ * 0.78))]
-    d.line(pts, fill=(232, 64, 48), width=3)
-    for (px, py) in pts:
-        d.ellipse([px - 3, py - 3, px + 3, py + 3], fill=(255, 120, 100))
-    ax, ay = pts[-1]
-    d.polygon([(ax, ay + 12), (ax - 10, ay - 2), (ax + 10, ay - 2)], fill=(232, 64, 48))
-    chip(d, (8, 8), "ASIA -7% WK", (164, 32, 24))
+    img = Image.new("RGB", (w_, h_), (18, 24, 38))
+    d = ImageDraw.Draw(img)
+    for gx in range(0, w_, 26):
+        d.line([(gx, 0), (gx, h_)], fill=(30, 40, 58), width=1)
+    for gy in range(0, h_, 18):
+        d.line([(0, gy), (w_, gy)], fill=(30, 40, 58), width=1)
+    pts = [(0.04, 0.30), (0.22, 0.24), (0.40, 0.38), (0.56, 0.34), (0.72, 0.58), (0.88, 0.52), (0.97, 0.78)]
+    xy = [(int(w_ * a), int(h_ * b)) for a, b in pts]
+    d.line(xy, fill=(255, 92, 84), width=4)
+    for x, y in xy:
+        d.ellipse([x - 3, y - 3, x + 3, y + 3], fill=(255, 92, 84))
+    d.polygon([(int(w_ * 0.90), int(h_ * 0.66)), (int(w_ * 0.985), int(h_ * 0.80)),
+               (int(w_ * 0.90), int(h_ * 0.80))], fill=(255, 92, 84))
+    chip(d, (8, 6), "MSCI ASIA -7% WEEK", (70, 16, 16))
     return img
 
 def sc_mercury(w_, h_):
-    img, d = scene_base(w_, h_, (4, 6, 16), (10, 12, 28))
-    for (sx, sy, sr) in [(20, 14, 2), (70, 30, 1), (130, 10, 2), (180, 36, 1), (40, 52, 1), (230, 16, 2), (270, 44, 1), (110, 50, 1)]:
-        if sx < w_:
-            d.ellipse([sx, sy, sx + sr * 2, sy + sr * 2], fill=(210, 214, 230))
-    px, py, pr = int(w_ * 0.72), int(h_ * 0.56), 26
-    d.ellipse([px - pr, py - pr, px + pr, py + pr], fill=(168, 160, 148))
-    for (ox, oy, orad) in [(-10, -6, 6), (8, 4, 8), (0, 14, 4), (14, -12, 5)]:
-        d.ellipse([px + ox - orad, py + oy - orad, px + ox + orad, py + oy + orad], outline=(130, 122, 110), width=2)
-    d.arc([px - pr - 16, py - 14, px + pr + 16, py + 14], 20, 160, fill=(120, 140, 180), width=2)
-    bx, by = int(w_ * 0.28), int(h_ * 0.44)
-    d.rectangle([bx - 7, by - 7, bx + 7, by + 7], fill=(216, 178, 84))
-    d.polygon([(bx - 34, by - 12), (bx - 10, by - 4), (bx - 10, by + 4), (bx - 34, by + 12)], fill=(70, 110, 190))
-    d.polygon([(bx + 34, by - 12), (bx + 10, by - 4), (bx + 10, by + 4), (bx + 34, by + 12)], fill=(70, 110, 190))
-    d.line([(bx, by + 7), (bx, by + 20)], fill=(200, 200, 210), width=2)
-    d.ellipse([bx - 6, by + 18, bx + 6, by + 28], outline=(200, 200, 210), width=2)
-    chip(d, (8, 8), "6BN MILES", (40, 44, 70))
+    img = Image.new("RGB", (w_, h_), (8, 10, 22))
+    d = ImageDraw.Draw(img)
+    for x, y in [(24, 12), (80, 30), (150, 8), (230, 26), (290, 14), (120, 40), (200, 44)]:
+        d.ellipse([x, y, x + 3, y + 3], fill=(215, 220, 235))
+    cx, cy, r = int(w_ * 0.68), int(h_ * 0.52), int(h_ * 0.34)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(176, 152, 128))
+    for ox, oy, orr in [(-0.3, -0.2, 6), (0.2, 0.1, 8), (0.05, -0.45, 4), (-0.1, 0.35, 5)]:
+        d.ellipse([cx + int(r * ox) - orr, cy + int(r * oy) - orr,
+                   cx + int(r * ox) + orr, cy + int(r * oy) + orr], fill=(150, 126, 102))
+    d.arc([int(w_ * 0.06), int(h_ * 0.16), int(w_ * 0.52), int(h_ * 0.92)], 300, 80,
+          fill=(120, 170, 220), width=2)
+    sx, sy = int(w_ * 0.30), int(h_ * 0.34)
+    d.polygon([(sx, sy), (sx + 16, sy + 6), (sx + 4, sy + 14)], fill=(230, 234, 240))
+    d.rectangle([sx - 12, sy - 2, sx, sy + 8], fill=(90, 140, 200))
+    d.rectangle([sx + 14, sy + 2, sx + 26, sy + 12], fill=(90, 140, 200))
+    chip(d, (8, 6), "8 YEARS - 6BN MILES", (14, 30, 52))
     return img
 
 def sc_eudeal(w_, h_):
-    img, d = scene_base(w_, h_, (24, 44, 96), (36, 62, 128))
-    import math
-    cx, cy = int(w_ * 0.24), int(h_ * 0.48)
+    img, d = base(w_, h_, (52, 84, 140), (40, 66, 110))
     for i in range(12):
-        a = math.radians(i * 30 - 90)
-        sx, sy = cx + int(22 * math.cos(a)), cy + int(22 * math.sin(a))
-        d.polygon([(sx, sy - 5), (sx + 2, sy), (sx + 5, sy), (sx + 2, sy + 2), (sx + 3, sy + 5),
-                   (sx, sy + 3), (sx - 3, sy + 5), (sx - 2, sy + 2), (sx - 5, sy), (sx - 2, sy)],
+        a = math.radians(i * 30)
+        x = int(w_ * 0.24 + 30 * math.cos(a))
+        y = int(h_ * 0.46 + 26 * math.sin(a))
+        d.polygon([(x, y - 5), (x + 2, y), (x + 5, y), (x, y + 3), (x - 5, y), (x - 2, y)],
                   fill=(250, 205, 60))
-    fx, fy, fw, fh = int(w_ * 0.52), int(h_ * 0.16), int(w_ * 0.40), int(h_ * 0.62)
-    d.rectangle([fx, fy, fx + fw, fy + fh], fill=(38, 60, 140))
-    d.polygon([(fx, fy), (fx + fw, fy + fh)], fill=(230, 230, 230), width=0)
-    d.line([(fx, fy), (fx + fw, fy + fh)], fill=(230, 230, 230), width=7)
-    d.line([(fx + fw, fy), (fx, fy + fh)], fill=(230, 230, 230), width=7)
-    d.line([(fx, fy), (fx + fw, fy + fh)], fill=(178, 30, 40), width=3)
-    d.line([(fx + fw, fy), (fx, fy + fh)], fill=(178, 30, 40), width=3)
-    d.rectangle([fx + fw // 2 - 5, fy, fx + fw // 2 + 5, fy + fh], fill=(230, 230, 230))
-    d.rectangle([fx, fy + fh // 2 - 5, fx + fw, fy + fh // 2 + 5], fill=(230, 230, 230))
-    d.rectangle([fx + fw // 2 - 3, fy, fx + fw // 2 + 3, fy + fh], fill=(178, 30, 40))
-    d.rectangle([fx, fy + fh // 2 - 3, fx + fw, fy + fh // 2 + 3], fill=(178, 30, 40))
-    ex, ey = int(w_ * 0.30), int(h_ * 0.80)
-    d.polygon([(ex, ey), (ex + 44, ey), (ex + 22, ey + 12)], fill=(240, 236, 224))
-    d.rectangle([ex, ey - 14, ex + 44, ey], outline=(240, 236, 224), width=2)
-    chip(d, (8, h_ - 24), "RESET DEAL", (10, 22, 52))
+    for bx, col in [(0.56, (178, 32, 36)), (0.72, (250, 250, 250))]:
+        x = int(w_ * bx)
+        d.rectangle([x, int(h_ * 0.24), x + 34, int(h_ * 0.62)], fill=col)
+        d.rectangle([x, int(h_ * 0.24), x + 34, int(h_ * 0.36)], fill=(40, 60, 130))
+    d.line([(int(w_ * 0.40), int(h_ * 0.46)), (int(w_ * 0.55), int(h_ * 0.46))],
+           fill=(250, 205, 60), width=4)
+    chip(d, (8, 6), "GBP 5.1BN FOOD DEAL", (16, 34, 62))
     return img
 
 def sc_inflation(w_, h_):
-    img, d = scene_base(w_, h_, (250, 246, 238), (238, 228, 210))
-    base = h_ - 14
-    for i, bh in enumerate((14, 20, 26, 36)):
-        bx = 14 + i * 26
-        d.rectangle([bx, base - bh, bx + 18, base], fill=(164, 32, 24) if i == 3 else (90, 90, 100))
-    d.line([(10, base - 8), (int(w_ * 0.55), base - 42)], fill=(26, 23, 16), width=2)
-    d.polygon([(int(w_ * 0.55), base - 42), (int(w_ * 0.55) - 9, base - 38), (int(w_ * 0.55) - 3, base - 31)], fill=(26, 23, 16))
-    cx, cy = int(w_ * 0.78), int(h_ * 0.42)
-    d.ellipse([cx - 20, cy - 20, cx + 20, cy + 20], fill=(240, 196, 76), outline=(178, 138, 40), width=3)
-    d.text((cx - 6, cy - 11), "¥", font=NB(20), fill=(120, 90, 20))
-    chip(d, (8, 6), "CPI 2.3%", (26, 23, 16))
+    img = Image.new("RGB", (w_, h_), (240, 234, 218))
+    d = ImageDraw.Draw(img)
+    for i, bh in enumerate([0.30, 0.38, 0.47, 0.58, 0.72]):
+        x = int(w_ * (0.10 + 0.17 * i))
+        d.rectangle([x, int(h_ * (0.92 - bh)), x + int(w_ * 0.11), int(h_ * 0.92)],
+                    fill=(198, 74, 52) if i == 4 else (120, 130, 150))
+    d.line([(int(w_ * 0.06), int(h_ * 0.92)), (int(w_ * 0.96), int(h_ * 0.92))],
+           fill=INK, width=2)
+    d.polygon([(int(w_ * 0.80), int(h_ * 0.14)), (int(w_ * 0.94), int(h_ * 0.28)),
+               (int(w_ * 0.80), int(h_ * 0.28))], fill=RED)
+    chip(d, (8, 6), "CPI 2.3% - CORE 2.2%", (90, 30, 20))
     return img
 
 def sc_rates(w_, h_):
-    img, d = scene_base(w_, h_, (146, 30, 28), (110, 22, 22))
-    bx, by, bw = int(w_ * 0.16), int(h_ * 0.30), int(w_ * 0.68)
-    d.polygon([(bx - 8, by), (bx + bw // 2, by - 16), (bx + bw + 8, by)], fill=(240, 230, 210))
-    for i in range(4):
-        cx = bx + 8 + i * (bw - 16) // 3 - 4
-        d.rectangle([cx, by + 4, cx + 8, by + 30], fill=(240, 230, 210))
-    d.rectangle([bx - 6, by + 34, bx + bw + 6, by + 40], fill=(240, 230, 210))
-    chip(d, (8, 6), "18TH MONTH", (70, 12, 10))
-    chip(d, (w_ - 104, h_ - 24), "3.0% / 3.5%", (240, 238, 230), INK)
+    img = Image.new("RGB", (w_, h_), (238, 232, 216))
+    d = ImageDraw.Draw(img)
+    cx, cy = int(w_ * 0.18), int(h_ * 0.50)
+    r = min(22, int(h_ * 0.32))
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(150, 40, 40), width=5)
+    d.text((cx - 10, cy - 11), "%", font=SB(18), fill=(150, 40, 40))
+    for i, (lab, val) in enumerate([("1-YEAR", "3.0%"), ("5-YEAR", "3.5%")]):
+        yy = int(h_ * (0.20 + 0.36 * i))
+        d.text((int(w_ * 0.40), yy), "%s  %s" % (lab, val), font=SB(13), fill=INK)
     return img
 
 def sc_cricket(w_, h_):
-    img, d = scene_base(w_, h_, (52, 120, 62), (38, 96, 48))
-    d.rectangle([0, 0, w_, int(h_ * 0.30)], fill=(30, 60, 96))
-    for i in range(6):
-        d.rectangle([8 + i * (w_ // 6), int(h_ * 0.10), 8 + i * (w_ // 6) + w_ // 9, int(h_ * 0.28)], fill=(52, 84, 124))
-    px = int(w_ * 0.40)
-    d.rectangle([px, int(h_ * 0.34), px + int(w_ * 0.20), h_ - 6], fill=(214, 196, 150))
-    for sx in (px + 8, px + int(w_ * 0.20) - 12):
-        for k in range(3):
-            d.rectangle([sx + k * 4, int(h_ * 0.44), sx + k * 4 + 2, int(h_ * 0.44) + 16], fill=(240, 230, 200))
-    d.line([(px + int(w_ * 0.30), int(h_ * 0.80)), (px + int(w_ * 0.42), int(h_ * 0.52))], fill=(120, 84, 40), width=4)
-    d.ellipse([px + int(w_ * 0.46), int(h_ * 0.48), px + int(w_ * 0.46) + 8, int(h_ * 0.48) + 8], fill=(178, 30, 40))
-    chip(d, (8, 6), "118 - RECORD", (16, 52, 26))
+    img, d = base(w_, h_, (96, 150, 84), (74, 128, 64))
+    d.rectangle([int(w_ * 0.44), int(h_ * 0.10), int(w_ * 0.56), int(h_ * 0.95)],
+                fill=(216, 192, 140))
+    for sx in [0.47, 0.50, 0.53]:
+        x = int(w_ * sx)
+        d.rectangle([x, int(h_ * 0.16), x + 3, int(h_ * 0.30)], fill=(120, 90, 50))
+    bx, by = int(w_ * 0.66), int(h_ * 0.42)
+    d.line([(bx, by), (bx + 26, by - 18)], fill=(240, 240, 240), width=4)
+    d.ellipse([int(w_ * 0.30), int(h_ * 0.30), int(w_ * 0.30) + 9, int(h_ * 0.30) + 9],
+              fill=(200, 40, 40))
+    chip(d, (8, 6), "PHILLIPS 118 - NZ 368", (26, 58, 26))
     return img
 
 def sc_bukele(w_, h_):
-    img, d = scene_base(w_, h_, (120, 180, 225), (190, 215, 240))
-    fx, fy, fw, fh = int(w_ * 0.10), 8, int(w_ * 0.44), int(h_ * 0.52)
-    d.rectangle([fx, fy, fx + fw, fy + fh // 3], fill=(40, 80, 160))
-    d.rectangle([fx, fy + fh // 3, fx + fw, fy + 2 * fh // 3], fill=(245, 245, 245))
-    d.rectangle([fx, fy + 2 * fh // 3, fx + fw, fy + fh], fill=(40, 80, 160))
-    d.ellipse([fx + fw // 2 - 7, fy + fh // 2 - 7, fx + fw // 2 + 7, fy + fh // 2 + 7], fill=(90, 160, 200), outline=(40, 80, 160))
-    d.line([(fx, fy), (fx, h_ - 4)], fill=(90, 70, 50), width=3)
-    bx, by = int(w_ * 0.62), int(h_ * 0.52)
-    d.rectangle([bx, by, bx + 52, by + 30], fill=(240, 238, 230), outline=(26, 23, 16), width=2)
-    d.rectangle([bx + 10, by - 6, bx + 42, by], fill=(26, 23, 16))
-    d.line([(bx + 18, by + 15), (bx + 25, by + 22), (bx + 38, by + 7)], fill=(164, 32, 24), width=3)
-    chip(d, (8, h_ - 24), "THIRD TERM", (24, 52, 100))
+    img, d = base(w_, h_, (70, 96, 150), (54, 76, 122))
+    d.rectangle([int(w_ * 0.10), int(h_ * 0.34), int(w_ * 0.90), int(h_ * 0.95)],
+                fill=(226, 220, 204))
+    for c in range(4):
+        x = int(w_ * (0.16 + 0.19 * c))
+        d.rectangle([x, int(h_ * 0.44), x + 8, int(h_ * 0.95)], fill=(180, 172, 152))
+    d.polygon([(int(w_ * 0.06), int(h_ * 0.34)), (int(w_ * 0.50), int(h_ * 0.16)),
+               (int(w_ * 0.94), int(h_ * 0.34))], fill=(120, 60, 50))
+    bx, by = int(w_ * 0.50), int(h_ * 0.60)
+    d.rectangle([bx - 30, by - 14, bx + 30, by + 14], fill=WHITE, outline=INK, width=2)
+    d.rectangle([bx - 30, by - 14, bx + 30, by - 2], fill=(60, 110, 180))
+    d.rectangle([bx - 30, by + 2, bx + 30, by + 14], fill=(60, 110, 180))
+    chip(d, (8, 6), "THIRD-TERM FILING", (30, 40, 66))
     return img
 
 def sc_boat(w_, h_):
-    img, d = scene_base(w_, h_, (30, 80, 120), (22, 58, 96))
-    for wy in range(int(h_ * 0.55), h_, 9):
-        for wx in range(0, w_, 36):
-            d.arc([wx + (wy % 18), wy, wx + 26 + (wy % 18), wy + 8], 180, 340, fill=(140, 200, 225), width=2)
-    hx, hy = int(w_ * 0.40), int(h_ * 0.52)
-    d.polygon([(hx - 44, hy), (hx + 44, hy), (hx + 26, hy - 16), (hx - 26, hy - 16)], fill=(150, 60, 40))
-    d.line([(hx - 10, hy - 16), (hx + 6, hy - 40)], fill=(220, 210, 190), width=3)
-    for (px, py) in [(hx - 58, hy + 10), (hx + 56, hy + 6), (hx + 20, hy + 16)]:
-        d.ellipse([px - 4, py - 10, px + 4, py - 2], fill=(240, 200, 160))
-        d.arc([px - 6, py - 2, px + 6, py + 8], 0, 180, fill=(240, 200, 160), width=3)
-    rx = int(w_ * 0.84)
-    d.polygon([(rx - 26, int(h_ * 0.72)), (rx + 26, int(h_ * 0.72)), (rx + 16, int(h_ * 0.60)), (rx - 16, int(h_ * 0.60))], fill=(245, 245, 245))
-    d.rectangle([rx - 3, int(h_ * 0.44), rx + 3, int(h_ * 0.60)], fill=(164, 32, 24))
-    chip(d, (8, 6), "4 DEAD", (90, 20, 14))
+    img, d = base(w_, h_, (216, 178, 120), (38, 84, 118))
+    for i in range(3):
+        y = int(h_ * (0.66 + 0.11 * i))
+        d.arc([int(w_ * 0.04), y - 6, int(w_ * 0.96), y + 10], 0, 180,
+              fill=(150, 196, 224), width=3)
+    hx, hy = int(w_ * 0.50), int(h_ * 0.58)
+    d.polygon([(hx - 52, hy), (hx + 40, hy), (hx + 22, hy + 16), (hx - 34, hy + 16)],
+              fill=(120, 62, 34))
+    d.line([(hx - 6, hy), (hx - 6, hy - 30)], fill=(80, 50, 30), width=3)
+    d.polygon([(hx - 6, hy - 30), (hx - 6, hy - 10), (hx + 16, hy - 12)], fill=(240, 236, 220))
+    d.line([(hx - 52, hy + 4), (hx - 78, hy - 14)], fill=(90, 50, 30), width=4)
+    chip(d, (8, 6), "4 DEAD - DOZENS MISSING", (70, 30, 16))
     return img
 
 def sc_strike(w_, h_):
-    img, d = scene_base(w_, h_, (228, 214, 188), (206, 188, 158))
-    for bx, bw, bh in [(0, 40, 44), (46, 34, 58), (86, 48, 40), (190, 40, 52), (236, 44, 42)]:
-        if bx < w_:
-            d.rectangle([bx, h_ - 18 - bh, bx + bw, h_ - 18], fill=(150, 128, 100))
-    gy = h_ - 16
-    for i, px in enumerate(range(12, w_ - 8, 22)):
-        py = gy - 14 - (i % 2) * 3
-        d.ellipse([px - 4, py - 8, px + 4, py], fill=(52, 42, 34))
-        d.rectangle([px - 4, py, px + 4, gy], fill=(52, 42, 34) if i % 3 else (164, 32, 24))
-        if i % 3 == 0:
-            d.line([(px + 4, py + 2), (px + 16, py - 12)], fill=(90, 70, 50), width=2)
-            d.rectangle([px + 16, py - 22, px + 40, py - 12], fill=(200, 44, 36))
-    chip(d, (8, 6), "24-HR STRIKE", (122, 22, 16))
+    img, d = base(w_, h_, (150, 60, 52), (120, 48, 42))
+    for i, fx in enumerate([0.10, 0.30, 0.50, 0.70, 0.88]):
+        x = int(w_ * fx)
+        d.line([(x, int(h_ * 0.30)), (x, int(h_ * 0.92))], fill=(240, 232, 210), width=3)
+        d.rectangle([x - 16, int(h_ * 0.30), x + 16, int(h_ * 0.46)],
+                    fill=(240, 236, 224) if i % 2 == 0 else (250, 205, 60))
+    for i in range(6):
+        x = int(w_ * (0.08 + 0.15 * i)); y = int(h_ * 0.94)
+        d.ellipse([x - 5, y - 16, x + 5, y - 6], fill=(30, 26, 24))
+        d.rectangle([x - 6, y - 6, x + 6, y + 4], fill=(30, 26, 24))
+    chip(d, (8, 6), "24H GENERAL STRIKE", (66, 16, 16))
     return img
 
 def sc_pill(w_, h_):
-    img, d = scene_base(w_, h_, (18, 62, 66), (14, 46, 52))
-    cx, cy = int(w_ * 0.36), int(h_ * 0.50)
-    d.rounded_rectangle([cx - 44, cy - 16, cx + 44, cy + 16], 16, fill=(240, 238, 230))
-    d.rounded_rectangle([cx, cy - 16, cx + 44, cy + 16], 16, fill=(200, 44, 48))
-    d.line([(cx, cy - 16), (cx, cy + 16)], fill=(160, 160, 160), width=2)
-    for (tx, ty, tr, col) in [(int(w_ * 0.74), int(h_ * 0.34), 13, (232, 120, 110)),
-                              (int(w_ * 0.84), int(h_ * 0.62), 8, (240, 170, 160)),
-                              (int(w_ * 0.68), int(h_ * 0.70), 5, (250, 210, 200))]:
+    img = Image.new("RGB", (w_, h_), (16, 44, 48))
+    d = ImageDraw.Draw(img)
+    cx, cy = int(w_ * 0.34), int(h_ * 0.52)
+    d.rounded_rectangle([cx - 52, cy - 19, cx + 52, cy + 19], 19, fill=(240, 238, 230))
+    d.rounded_rectangle([cx, cy - 19, cx + 52, cy + 19], 19, fill=(200, 44, 48))
+    d.line([(cx, cy - 19), (cx, cy + 19)], fill=(160, 160, 160), width=2)
+    for tx, ty, tr, col in [(int(w_ * 0.76), int(h_ * 0.32), 14, (232, 120, 110)),
+                            (int(w_ * 0.86), int(h_ * 0.62), 9, (240, 170, 160)),
+                            (int(w_ * 0.68), int(h_ * 0.72), 6, (250, 210, 200))]:
         d.ellipse([tx - tr, ty - tr, tx + tr, ty + tr], outline=col, width=3)
         d.line([(tx - tr + 3, ty), (tx + tr - 3, ty)], fill=col, width=2)
-    chip(d, (8, 6), "60.7% RESPONSE", (8, 34, 36))
+    chip(d, (8, 6), "60.7% RESPONSE", (8, 30, 32))
     return img
 
 SCENES = {
@@ -329,7 +291,7 @@ CONTINENTS = [
 
 def draw_map(d, box, pins):
     x0, y0, x1, y1 = box
-    d.rectangle(box, fill=(24, 34, 52))
+    d.rectangle(box, fill=DARK)
     def proj(lon, lat):
         return (x0 + (lon + 180) / 360 * (x1 - x0), y0 + (90 - lat) / 180 * (y1 - y0))
     for poly in CONTINENTS:
@@ -340,7 +302,7 @@ def draw_map(d, box, pins):
     for lon, lat in [(130, 31), (137, 35), (141, 40), (142, 44)]:
         px, py = proj(lon, lat)
         d.ellipse([px - 3, py - 3, px + 3, py + 3], fill=(196, 172, 120))
-    pin_off = {1: (33, 53), 3: (34, 33), 6: (5, 53), 12: (16, 40), 13: (-1, 44)}
+    pin_off = {1: (33, 53), 3: (34, 33), 6: (5, 53), 12: (16, 40)}
     for num, lon, lat in pins:
         lon, lat = pin_off.get(num, (lon, lat))
         px, py = proj(lon, lat)
@@ -348,100 +310,94 @@ def draw_map(d, box, pins):
         s = str(num)
         fnt = NB(10 if len(s) < 2 else 9)
         d.text((px - tw(d, s, fnt) / 2, py - 6), s, font=fnt, fill=WHITE)
-    d.text((x0 + 8, y1 - 18), "SPACE: 5 Mercury", font=NB(9), fill=(200, 214, 235))
+    d.text((x0 + 8, y1 - 36), "WHERE IT HAPPENED", font=NB(10), fill=(200, 214, 235))
+    d.text((x0 + 8, y1 - 18), "SPACE: 5 Mercury - 12 pins on land", font=NB(9), fill=(200, 214, 235))
 
 # ------------------------------------------------------------------ data
+# region codes: EU, AP, AM, OC, ME, AF, WO
 LEADS = [
-    dict(n=1, scene="missiles", place="KYIV, UKRAINE", beat="WAR", tag="Officials say",
-         head="Russia fires wave of ~30 ballistic missiles at Kyiv",
-         deck="Seven overnight waves hit energy and transport sites; fires burn in three districts and the Dutch and Austrian embassies are damaged, city officials say. (Kyiv Post, Reuters)",
-         pin=(30.52, 50.45)),
-    dict(n=2, scene="cyclone", place="ODISHA, INDIA", beat="CYCLONE", tag="IMD",
-         head="Cyclone Akvan makes landfall in eastern India",
-         deck="The severe storm crosses near Gopalpur; 300,000+ evacuated, winds 90-100 gusting 110 km/h, 423 rescue teams deployed and schools shut. (IMD, The Hindu)",
-         pin=(84.92, 19.27)),
-    dict(n=3, scene="cop31", place="ANTALYA, TURKIYE", beat="CLIMATE", tag="UN News",
-         head="COP31 reaches its final day deadlocked",
-         deck="The closing draft omits a fossil-fuel phase-out while a $120bn adaptation finance gap stays unresolved; hosts push a '35 by 35' clean-power goal. (UN News, Reuters)",
-         pin=(30.71, 36.88)),
+    dict(n=1, place="KYIV", beat="UKRAINE", tag="WAR", scene="missiles", reg="EU",
+         head="Kyiv hit by ~30 ballistic missiles in seven waves",
+         deck="Bridges and districts struck from 01:25 local; casualties reported. Officials, via Reuters."),
+    dict(n=2, place="GOPALPUR", beat="INDIA", tag="WEATHER", scene="cyclone", reg="AP",
+         head="Cyclone Akvan makes landfall on the Odisha coast",
+         deck="300,000+ evacuated; gusts of 90-110 km/h and a storm surge flood the shore. IMD, via PTI."),
+    dict(n=3, place="ANTALYA", beat="TURKIYE", tag="CLIMATE", scene="cop31", reg="EU",
+         head="COP31 ends its final day deadlocked on fossil fuels",
+         deck="The draft omits any phase-out pledge, and a $120bn finance gap stays open. Delegates, via AFP."),
 ]
 
 GRID = [
-    dict(n=4, scene="selloff", place="SEOUL / TOKYO", beat="MARKETS", tag="Reuters",
-         head="AI sell-off sinks Asia to worst week since 2020",
-         deck="Nikkei -4.5%, KOSPI -4.7%, SoftBank -16%; MSCI Asia-Pacific down 7%. (Reuters)",
-         pin=(126.98, 37.57)),
-    dict(n=5, scene="mercury", place="MERCURY", beat="SPACE", tag="ESA",
-         head="BepiColombo reaches Mercury after 8 years",
-         deck="ESA/JAXA probe ends a 6bn-mile trip; orbit insertion Saturday. (ESA, BBC)",
-         pin=None),
-    dict(n=6, scene="eudeal", place="BRUSSELS", beat="EUROPE", tag="Reported",
-         head="UK and EU seal 'reset' deal a decade after Brexit",
-         deck="Youth mobility, food trade, carbon links; food deal GBP 5.1bn. (Al Jazeera)",
-         pin=(4.35, 50.85)),
-    dict(n=7, scene="inflation", place="TOKYO", beat="ECONOMY", tag="Reuters",
-         head="Japan inflation hits 2.3%; BoJ hike eyed",
-         deck="October headline CPI rises from 2.1%; core stays above 2% for a second month. (Reuters)",
-         pin=(139.69, 35.68)),
-    dict(n=8, scene="rates", place="BEIJING", beat="RATES", tag="PBOC",
-         head="China holds lending rates for 18th month",
-         deck="1-year LPR at 3.0%, 5-year at 3.5%, as expected. (PBOC, Reuters)",
-         pin=(116.40, 39.90)),
-    dict(n=9, scene="cricket", place="WELLINGTON", beat="CRICKET", tag="ICC",
-         head="Phillips makes history with 118 vs India",
-         deck="First NZ batter with centuries in all 3 formats vs India in a year. (ICC)",
-         pin=(174.78, -41.29)),
-    dict(n=10, scene="bukele", place="SAN SALVADOR", beat="POLITICS", tag="AP",
-         head="Bukele registers for a third term",
-         deck="Files with the tribunal for the Feb 2027 vote; rights groups object. (AP)",
-         pin=(-89.22, 13.69)),
-    dict(n=11, scene="boat", place="SENEGAL", beat="MIGRATION", tag="Al Jazeera",
-         head="Migrant boat capsizes off Yenne; 4 dead",
-         deck="Dozens are missing from 50-100 aboard, as Canary Islands arrivals surge. (Al Jazeera)",
-         pin=(-17.35, 14.55)),
-    dict(n=12, scene="strike", place="ROME", beat="LABOUR", tag="AFP",
-         head="Italy's CGIL holds 24-hour general strike",
-         deck="Unions rally in 100 squares against the 2027 budget; transit hit. (CGIL, AFP)",
-         pin=(12.50, 41.90)),
-    dict(n=13, scene="pill", place="BARCELONA", beat="HEALTH", tag="Reuters",
-         head="Pancreatic cancer pill shrinks tumours 60.7%",
-         deck="Daraxonrasib plus chemo beats chemo alone (23-42%) in an early trial. (Reuters)",
-         pin=(2.17, 41.38)),
+    dict(n=4, place="TOKYO", beat="MARKETS", scene="selloff", reg="AP",
+         head="Asia's AI sell-off: worst week since 2020",
+         deck="Nikkei -4.5%, KOSPI -4.7%, SoftBank -16%; MSCI Asia-Pacific -7%. Reuters."),
+    dict(n=5, place="MERCURY", beat="SPACE", scene="mercury", reg="WO",
+         head="BepiColombo reaches Mercury after eight years",
+         deck="Orbit insertion comes Saturday, after 6bn miles and six flybys. ESA."),
+    dict(n=6, place="BRUSSELS", beat="EUROPE", scene="eudeal", reg="EU",
+         head="UK and EU sign their reset deal in Brussels",
+         deck="A GBP 5.1bn food deal sits at the heart of the package. BBC."),
+    dict(n=7, place="TOKYO", beat="ECONOMY", scene="inflation", reg="AP",
+         head="Japan inflation holds at 2.3% in October",
+         deck="Core CPI 2.2%; a December BoJ hike is eyed. Stats Bureau."),
+    dict(n=8, place="BEIJING", beat="ECONOMY", scene="rates", reg="AP",
+         head="China holds loan prime rates an 18th month",
+         deck="One-year LPR stays 3.0%, five-year 3.5%. PBoC."),
+    dict(n=9, place="WELLINGTON", beat="CRICKET", scene="cricket", reg="OC",
+         head="Phillips smashes 118 in record NZ total",
+         deck="His century lifts the hosts to 368 against India. ICC."),
+    dict(n=10, place="SAN SALVADOR", beat="POLITICS", scene="bukele", reg="AM",
+         head="Bukele files to run for a third term",
+         deck="The vote is set for 28 February 2027. Reports."),
+    dict(n=11, place="YENNE", beat="SENEGAL", scene="boat", reg="AF",
+         head="Migrant boat capsizes off the Senegal coast",
+         deck="Four dead and dozens missing; the search goes on. AFP."),
+    dict(n=12, place="TURIN", beat="ITALY", scene="strike", reg="EU",
+         head="CGIL calls a 24-hour general strike",
+         deck="Rallies fill about 100 squares across Italy. ANSA."),
+    dict(n=13, place="BOSTON", beat="HEALTH", scene="pill", reg="AM",
+         head="Pancreatic cancer pill beats chemo in trial",
+         deck="Daraxonrasib: 60.7% response vs 23-42% on chemo alone. Trial data."),
 ]
 
 ALSO = [
-    (14, "WASHINGTON", "Pentagon puts the US war cost against Iran at $48.3bn (Reuters)"),
-    (15, "NEW YORK", "Mamdani plans to close Rikers Island jail by 2032 (reports)"),
-    (16, "MEXICO CITY", "The nation marks its 116th Revolution Day (AP)"),
-    (17, "PORT-AU-PRINCE", "Police say a raid killed 34 gang suspects (Reuters)"),
-    (18, "LAS VEGAS", "Russell is fastest in wet Las Vegas Grand Prix practice, 1:47.272 (Formula1.com)"),
-    (19, "FLORIDA", "St Johns River hits a record 18.3 ft; four counties shut schools (AP)"),
-    (20, "SAO PAULO", "Markets shut for Black Consciousness Day (AFP)"),
-    (21, "LONDON", "UK and Norway fund GBP 100m+ for two Ukrainian naval vessels (BBC)"),
-    (22, "COPENHAGEN", "Denmark's parliament approves the Greenland defence bill (AFP)"),
-    (23, "LUBLIN", "A Russian cruise missile lands in a Polish field; Tusk calls it a provocation (officials say)"),
-    (24, "BERLIN", "Young Germans rally against conscription in many cities (reported)"),
-    (25, "TURIN", "Alcaraz-Cobolli and Medvedev-Tiafoe close the ATP Finals groups (ATP)"),
-    (26, "SMOLENSK", "Drones are reported to hit a Russian chemical plant - an unconfirmed claim (Kyiv Independent)"),
-    (27, "SEOUL", "The ruling party moves to impeach Chief Justice Cho Hee-dae (SBS)"),
-    (28, "SEOUL", "111 students are caught cheating in the Suneung exam (officials say)"),
-    (29, "SHENZHEN", "Xi hails a 'full turnaround' in ties with Australia (CGTN, AAP)"),
-    (30, "COX'S BAZAR", "Rohingya weep and pray in the camps after the ICJ ruling (Al Jazeera)"),
-    (31, "HORMUZ", "The strait stays shut; Brent crude nears $92.50 and 46 ships wait (tracker reports)"),
-    (32, "SAUDI ARABIA", "The coalition says it downed a Houthi missile - a claim (Reuters)"),
-    (33, "BLANTYRE", "Malawi's fuel crisis: night queues and a 20-litre daily cap (Al Jazeera)"),
-    (34, "BOUGAINVILLE", "Rio Tinto pledges $370m for the Panguna mine fleet (Reuters)"),
-    (35, "CANBERRA", "The CBO warns AUKUS sub sales could shrink the US fleet (Reuters)"),
-    (36, "TONGA", "The Pacific kingdom declares an emergency as El Nino drought bites (RNZ)"),
-    (37, "JAKARTA", "Indonesia's parliament passes the asset-forfeiture bill (Reuters)"),
-    (38, "NEW DELHI", "A Pakistan minister leads a delegation to the SCO dialogue (The Hindu)"),
-    (39, "HONG KONG", "The Badminton Open reaches its semi-finals after an upset (BWF)"),
-    (40, "KHARKIV", "A drone hits a hospital; at least four people are hurt (Ukrinform)"),
-    (41, "GAZA", "Over 85% of civil defence vehicles are out of service (reports)"),
-    (42, "DAKAR", "President Faye enacts a supplementary budget by decree (AFP)"),
-    (43, "GLOBAL", "The UN marks World Children's Day across member states (UN News)"),
-    (44, "CALIFORNIA", "The state probes Nvidia over chips in China (inquiry)"),
-    (45, "WELLINGTON", "Henry Nicholls scores 175* in a 216-run stand with Phillips (ICC)"),
+    (14, "WASHINGTON", "US war cost vs Iran put at $48.3bn - Reuters", "AM"),
+    (15, "NEW YORK", "Mamdani plans to close Rikers jail by 2032", "AM"),
+    (16, "MEXICO CITY", "116th Revolution Day marked nationwide - AP", "AM"),
+    (17, "PORT-AU-PRINCE", "Police raid kills 34 gang suspects - Reuters", "AM"),
+    (18, "LAS VEGAS", "Russell fastest in wet GP practice, 1:47.272", "AM"),
+    (19, "FLORIDA", "River hits record 18.3 ft; schools shut - AP", "AM"),
+    (20, "SAO PAULO", "Markets shut for Black Consciousness Day - AFP", "AM"),
+    (21, "LONDON", "UK-Norway fund GBP 100m+ for Ukraine navy - BBC", "EU"),
+    (22, "COPENHAGEN", "Greenland defence bill approved - AFP", "EU"),
+    (23, "LUBLIN", "Russian missile in Polish field; Tusk protests", "EU"),
+    (24, "BERLIN", "Young Germans rally against conscription", "EU"),
+    (25, "TURIN", "Alcaraz, Medvedev close ATP Finals groups", "EU"),
+    (26, "SMOLENSK", "Drone hit on chemical plant claimed, unverified", "EU"),
+    (27, "SEOUL", "Party moves to impeach chief justice - SBS", "AP"),
+    (28, "SEOUL", "111 students caught cheating in Suneung exam", "AP"),
+    (29, "SHENZHEN", "Xi hails 'full turnaround' with Australia - AAP", "AP"),
+    (30, "COX'S BAZAR", "Rohingya pray in camps after ICJ ruling - AJ", "AP"),
+    (31, "HORMUZ", "Strait shut; Brent near $92.50, 46 ships wait", "ME"),
+    (32, "SAUDI ARABIA", "Coalition 'downs Houthi missile' - a claim", "ME"),
+    (33, "BLANTYRE", "Fuel crisis: night queues, 20-litre cap - AJ", "AF"),
+    (34, "BOUGAINVILLE", "Rio Tinto pledges $370m for Panguna fleet", "OC"),
+    (35, "CANBERRA", "CBO warns AUKUS could shrink US sub fleet", "OC"),
+    (36, "TONGA", "Emergency declared amid El Nino drought - RNZ", "OC"),
+    (37, "JAKARTA", "Parliament passes asset-forfeiture bill", "AP"),
+    (38, "NEW DELHI", "Pakistan minister leads SCO delegation - Hindu", "AP"),
+    (39, "HONG KONG", "Badminton Open semi-finals after an upset - BWF", "AP"),
+    (40, "KHARKIV", "Drone hits hospital; 4+ hurt - Ukrinform", "EU"),
+    (41, "GAZA", "85%+ of civil defence vehicles out of service", "ME"),
+    (42, "DAKAR", "Faye enacts extra budget by decree - AFP", "AF"),
+    (43, "GLOBAL", "UN marks World Children's Day worldwide", "WO"),
+    (44, "CALIFORNIA", "State probes Nvidia over chips in China", "AM"),
+    (45, "WELLINGTON", "Nicholls 175* in 216-run stand with Phillips", "OC"),
+    (46, "KYIV", "Crews race to restore power after the barrage", "EU"),
+    (47, "DHAKA", "Shelters open as Akvan tracks north - officials", "AP"),
+    (48, "GENEVA", "WHO notes a rare pancreatic-cancer advance", "EU"),
+    (49, "LONDON", "Sterling steady as traders weigh the EU deal", "EU"),
+    (50, "TOKYO", "Yen whipsaws on December BoJ hike bets", "AP"),
 ]
 
 NUMBERS = [
@@ -450,18 +406,22 @@ NUMBERS = [
     ("-7%", "Asia shares' worst week since 2020"),
     ("2.3%", "Japan Oct headline CPI; BoJ eyed"),
     ("118", "Phillips' historic century vs India"),
-    ("8 yrs", "BepiColombo reaches Mercury"),
+    ("8 yrs", "BepiColombo's journey to Mercury"),
 ]
 
-REGIONS = [
-    ("EUROPE 12", 12, (43, 76, 126)),
-    ("AMERICAS 9", 9, (179, 84, 63)),
-    ("ASIA-PACIFIC 11", 11, (38, 110, 104)),
-    ("MIDEAST 3", 3, (176, 128, 44)),
-    ("AFRICA 3", 3, (84, 118, 60)),
-    ("OCEANIA 5", 5, (110, 84, 140)),
-    ("WORLD 2", 2, (60, 60, 70)),
+REGION_ORDER = [
+    ("EU", "EUROPE", (58, 92, 150)),
+    ("AP", "ASIA-PACIFIC", (186, 84, 52)),
+    ("AM", "AMERICAS", (84, 140, 84)),
+    ("OC", "OCEANIA", (110, 84, 140)),
+    ("ME", "MIDEAST", (176, 128, 44)),
+    ("AF", "AFRICA", (84, 118, 60)),
+    ("WO", "WORLD", (60, 60, 70)),
 ]
+
+PINS = [(1, 30, 50), (2, 85, 19), (3, 31, 37), (4, 128, 31), (6, 0, 51),
+        (7, 139, 36), (8, 116, 40), (9, 175, -41), (10, -89, 14),
+        (11, -17, 15), (12, 8, 45), (13, -71, 42)]
 
 DATECHECK = ("First reported Thursday 19 Nov, so NOT shown as Friday's news: the Trump-Xi-Putin "
              "Shenzhen summit itself - Anthropic's $83 IPO pricing and Nasdaq debut - the ICJ's Myanmar "
@@ -469,134 +429,141 @@ DATECHECK = ("First reported Thursday 19 Nov, so NOT shown as Friday's news: the
              "confirmation - the Senate's 48-51 Iran war-powers vote - Fiona the hippo's death.")
 
 # ---------------------------------------------------------------- layout
-def lead_card(img, x, y, w_, h_, st):
-    x, y, w_, h_ = int(x), int(y), int(w_), int(h_)
-    d = ImageDraw.Draw(img)
-    d.rectangle([x, y, x + w_, y + h_], fill=CARD, outline=(190, 180, 156), width=1)
-    sc = SCENES[st["scene"]](w_ - 16, 92)
-    img.paste(sc, (x + 8, y + 8))
-    cy = y + 108
-    kick = "%02d - %s - %s" % (st["n"], st["place"], st["beat"])
-    spaced(d, (x + 10, cy), kick, NB(10), RED, gap=1)
-    tagw = tw(d, st["tag"], NI(9))
-    d.text((x + w_ - 10 - tagw, cy + 1), st["tag"], font=NI(9), fill=GREY)
-    cy += 16
-    for ln in wrap(d, st["head"], SB(19), w_ - 20)[:3]:
-        d.text((x + 10, cy), ln, font=SB(19), fill=INK)
-        cy += 22
-    cy += 2
-    for ln in wrap(d, st["deck"], NR(10), w_ - 20)[:4]:
-        d.text((x + 10, cy), ln, font=NR(10), fill=(52, 48, 40))
-        cy += 12
+L, R = 22, 1002
+CW = R - L
 
-def grid_card(img, x, y, w_, h_, st):
-    x, y, w_, h_ = int(x), int(y), int(w_), int(h_)
+def lead_card(img, x, y, w_, st):
+    x, y, w_ = int(x), int(y), int(w_)
     d = ImageDraw.Draw(img)
-    d.rectangle([x, y, x + w_, y + h_], fill=CARD, outline=(190, 180, 156), width=1)
-    sc = SCENES[st["scene"]](w_ - 12, 46)
-    img.paste(sc, (x + 6, y + 6))
-    cy = y + 58
+    d.rectangle([x, y, x + w_, y + 218], fill=CARD, outline=(190, 180, 156), width=1)
+    img.paste(SCENES[st["scene"]](w_ - 16, 96), (x + 8, y + 8))
+    cy = y + 109
     kick = "%02d - %s - %s" % (st["n"], st["place"], st["beat"])
-    d.text((x + 8, cy), kick, font=NB(8), fill=RED)
-    cy += 11
-    for ln in wrap(d, st["head"], SB(12), w_ - 16)[:2]:
-        d.text((x + 8, cy), ln, font=SB(12), fill=INK)
+    d.text((x + 10, cy), kick, font=NB(10), fill=RED)
+    tagw = tw(d, st["tag"], NI(10))
+    d.text((x + w_ - 10 - tagw, cy), st["tag"], font=NI(10), fill=GREY)
+    cy += 15
+    for ln in wrap(d, st["head"], SB(20), w_ - 20)[:2]:
+        d.text((x + 10, cy), ln, font=SB(20), fill=INK)
+        cy += 23
+    cy += 3
+    for ln in wrap(d, st["deck"], NR(12), w_ - 20)[:3]:
+        d.text((x + 10, cy), ln, font=NR(12), fill=(52, 48, 40))
         cy += 15
-    cy += 1
-    for ln in wrap(d, st["deck"], NR(9), w_ - 16)[:2]:
-        d.text((x + 8, cy), ln, font=NR(9), fill=(52, 48, 40))
-        cy += 11
+
+def grid_card(img, x, y, w_, st):
+    x, y, w_ = int(x), int(y), int(w_)
+    d = ImageDraw.Draw(img)
+    d.rectangle([x, y, x + w_, y + 138], fill=CARD, outline=(190, 180, 156), width=1)
+    img.paste(SCENES[st["scene"]](w_ - 12, 50), (x + 6, y + 6))
+    cy = y + 60
+    kick = "%02d - %s - %s" % (st["n"], st["place"], st["beat"])
+    d.text((x + 8, cy), fit1(d, kick, NB(9), w_ - 16), font=NB(9), fill=RED)
+    cy += 12
+    for ln in wrap(d, st["head"], SB(14), w_ - 16)[:2]:
+        d.text((x + 8, cy), ln, font=SB(14), fill=INK)
+        cy += 17
+    cy += 2
+    for ln in wrap(d, st["deck"], NR(10), w_ - 16)[:2]:
+        d.text((x + 8, cy), ln, font=NR(10), fill=(52, 48, 40))
+        cy += 13
 
 def main():
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    L, R = 18, 1006
     # masthead
-    spaced(d, (L, 8), "THE WORLD IN ONE DAY", NB(11), RED, gap=2)
-    rtxt = "ONE PAGE - 45 STORIES - 7 REGIONS"
-    spaced(d, (R - spaced_w(d, rtxt, NB(11), 2), 8), rtxt, NB(11), INK, gap=2)
-    title = "Friday 20 November 2026"
-    tf = SB(50)
-    d.text(((W - tw(d, title, tf)) / 2, 24), title, font=tf, fill=INK)
-    sub = "Cyclone Akvan strikes India - Ballistic missiles hit Kyiv - COP31 deadlocked on final day - Asian AI sell-off"
-    sf = SI(15)
-    d.text(((W - tw(d, sub, sf)) / 2, 80), sub, font=sf, fill=DARKRED)
-    d.line([(L, 102), (R, 102)], fill=RULE, width=3)
-    d.line([(L, 107), (R, 107)], fill=RULE, width=1)
-    # numbers strip
-    ny, nh = 112, 44
-    cw = (R - L) / 6
+    spaced(d, (L, 10), "THE WORLD IN ONE DAY", NB(12), RED, gap=2)
+    rtxt = "ONE PAGE - 50 STORIES - 7 REGIONS"
+    d.text((R - tw(d, rtxt, NB(11)), 11), rtxt, font=NB(11), fill=GREY)
+    d.text((L, 28), "FRIDAY 20 NOVEMBER 2026", font=SF(42), fill=INK)
+    sub = ("Cyclone Akvan ashore in Odisha - a ballistic barrage over Kyiv - "
+           "COP31 deadlocked - and a visitor reaches Mercury")
+    d.text((L, 80), fit1(d, sub, SI(16), CW), font=SI(16), fill=(70, 62, 48))
+    d.rectangle([L, 103, R, 106], fill=INK)
+    d.line([(L, 109), (R, 109)], fill=INK, width=1)
+    # the day in numbers
+    y = 116
+    spaced(d, (L, y), "THE DAY IN NUMBERS", NB(10), RED, gap=1)
+    y += 14
+    cellw = CW / 6
     for i, (num, cap) in enumerate(NUMBERS):
-        x = L + i * cw
-        if i: d.line([(x, ny + 4), (x, ny + nh - 4)], fill=(200, 190, 168), width=1)
-        d.rectangle([x + (0 if i == 0 else 8), ny, x + (2 if i == 0 else 10), ny + nh], fill=RED)
-        px = x + (8 if i == 0 else 16)
-        d.text((px, ny), num, font=SB(22), fill=INK)
-        for j, ln in enumerate(wrap(d, cap, NR(9), cw - 22)[:2]):
-            d.text((px, ny + 27 + j * 11), ln, font=NR(9), fill=GREY)
-    d.line([(L, ny + nh + 4), (R, ny + nh + 4)], fill=(200, 190, 168), width=1)
-    # region bar
-    by = ny + nh + 8
-    total = sum(c for _, c, _ in REGIONS)
+        x = L + i * cellw
+        d.text((x, y), num, font=SF(24), fill=RED if num == "-7%" else INK)
+        for j, ln in enumerate(wrap(d, cap, NB(8), cellw - 10)[:2]):
+            d.text((x, y + 29 + j * 10), ln, font=NB(8), fill=GREY)
+    y += 48
+    d.line([(L, y), (R, y)], fill=(190, 180, 156), width=1)
+    y += 5
+    # region bar (counts computed from the story data itself)
+    counts = {}
+    for st in LEADS + GRID:
+        counts[st["reg"]] = counts.get(st["reg"], 0) + 1
+    for _, _, _, reg in ALSO:
+        counts[reg] = counts.get(reg, 0) + 1
+    total = sum(counts.values())
+    assert total == 50, total
     x = L
-    for label, cnt, col in REGIONS:
-        segw = (R - L) * cnt / total
-        d.rectangle([x, by, x + segw - 2, by + 18], fill=col)
-        lf = NB(10)
-        tx = x + (segw - tw(d, label, lf)) / 2 - 1
-        if tx + tw(d, label, lf) > R - 2:
-            tx = R - 2 - tw(d, label, lf)
-        d.text((tx, by + 4), label, font=lf, fill=WHITE)
+    for code, label, col in REGION_ORDER:
+        segw = CW * counts[code] / total
+        d.rectangle([x, y, x + segw - 2, y + 20], fill=col)
+        lab = "%s %d" % (label, counts[code])
+        if tw(d, lab, NB(9)) <= segw - 8:
+            d.text((x + (segw - 2 - tw(d, lab, NB(9))) / 2, y + 5), lab, font=NB(9), fill=WHITE)
+        else:
+            s = str(counts[code])
+            d.text((x + (segw - 2 - tw(d, s, NB(9))) / 2, y + 5), s, font=NB(9), fill=WHITE)
         x += segw
-    d.text((L, by + 21), "ALL STORIES: FRI 20 NOV 2026, ANY TIME ZONE", font=NB(9), fill=GREY)
+    y += 24
     # leads
-    ly, lh, lgap = by + 36, 208, 8
-    lw = (R - L - 2 * lgap) / 3
+    lw = (CW - 26) / 3
     for i, st in enumerate(LEADS):
-        lead_card(img, L + i * (lw + lgap), ly, lw, lh, st)
-    # grid 5 x 2
-    gy = ly + lh + 8
-    gh, ggap = 124, 6
-    gw = (R - L - 4 * ggap) / 5
-    for i, st in enumerate(GRID):
-        grid_card(img, L + (i % 5) * (gw + ggap), gy + (i // 5) * (gh + ggap), gw, gh, st)
-    # bottom: map + also (2 wide columns, one/two lines per story)
-    boty = gy + 2 * gh + ggap + 8
-    both = 240
-    d.text((L, boty), "WHERE IT HAPPENED", font=NB(11), fill=INK)
-    d.text((L + 190, boty + 1), "Pins 1-13 (Lead & Feature)", font=NI(9), fill=GREY)
-    pins = [(st["n"], st["pin"][0], st["pin"][1]) for st in LEADS + GRID if st["pin"]]
-    draw_map(d, (L, boty + 18, L + 318, boty + 18 + both), pins)
-    ax = L + 330
-    d.text((ax, boty), "ALSO ON FRIDAY 20 NOVEMBER - 32 MORE STORIES", font=NB(11), fill=INK)
-    colw = (R - ax - 14) / 2
-    per = 16
-    for c in range(2):
-        cx = ax + c * (colw + 14)
-        cy = boty + 20
-        for (n, place, txt) in ALSO[c * per:(c + 1) * per]:
-            full = place + " - " + txt
-            lines = wrap(d, full, NR(8), colw - 20)
-            d.text((cx, cy), str(n), font=NB(8), fill=RED)
-            for ln in lines[:2]:
-                d.text((cx + 20, cy), ln, font=NR(8), fill=(52, 48, 40))
-                cy += 10
-            cy += 1
+        lead_card(img, L + i * (lw + 13), y, lw, st)
+    y += 220
+    # grid
+    gw = (CW - 40) / 5
+    for r_ in range(2):
+        for c_ in range(5):
+            grid_card(img, L + c_ * (gw + 10), y + r_ * 142, gw, GRID[r_ * 5 + c_])
+    y += 284
+    # map
+    draw_map(d, [L, y, R, y + 76], PINS)
+    y += 82
+    # also
+    d.text((L, y), "ALSO FRIDAY", font=SB(14), fill=RED)
+    d.text((L + tw(d, "ALSO FRIDAY", SB(14)) + 8, y + 2),
+           "- 37 more stories from the wires", font=NR(11), fill=INK)
+    y += 18
+    d.line([(L, y), (R, y)], fill=(190, 180, 156), width=1)
+    y += 3
+    colw = (CW - 26) / 3
+    cols = [ALSO[0:13], ALSO[13:26], ALSO[26:37]]
+    for ci, col in enumerate(cols):
+        cx = L + ci * (colw + 13)
+        cyy = y
+        for n, place, text, _ in col:
+            head = "%02d %s - " % (n, place)
+            hw = tw(d, head, NB(10))
+            d.text((cx, cyy), head, font=NB(10), fill=INK)
+            d.text((cx + hw, cyy), fit1(d, text, NR(10), colw - hw), font=NR(10),
+                   fill=(52, 48, 40))
+            cyy += 12
+    y += 13 * 12 + 3
     # date check
-    dcy = boty + 18 + both + 10
-    d.rectangle([L, dcy, R, dcy + 30], outline=RED, width=2)
-    d.text((L + 8, dcy + 4), "DATE CHECK", font=NB(10), fill=RED)
-    dl = wrap(d, DATECHECK, NR(9), R - L - 92)
-    for j, ln in enumerate(dl[:2]):
-        d.text((L + 88, dcy + 4 + j * 12), ln, font=NR(9), fill=(52, 48, 40))
-    # footer (single line)
-    fy = dcy + 36
-    d.line([(L, fy), (R, fy)], fill=RULE, width=1)
-    foot = ("Every story here happened, or was first reported, on Friday 20 November 2026 in at least one time zone. "
-            "Claims are attributed, not stated as fact. Sources: Reuters, AP, AFP, BBC, IMD, ICC, EU Council, PBOC, UN News, Al Jazeera.")
-    d.text((L, fy + 5), foot, font=NI(8), fill=GREY)
-    img.save("entry.png", optimize=True)
-    print("wrote entry.png", img.size)
+    d.rectangle([L, y, R, y + 27], outline=RED, width=2)
+    d.text((L + 8, y + 4), "DATE CHECK", font=NB(10), fill=RED)
+    dx = L + 8 + tw(d, "DATE CHECK", NB(10)) + 8
+    lines = wrap(d, DATECHECK, NR(9), R - dx - 8)
+    d.text((dx, y + 4), lines[0], font=NR(9), fill=INK)
+    for j, ln in enumerate(wrap(d, " ".join(lines[1:]), NR(9), CW - 16)[:1]):
+        d.text((L + 8, y + 16), ln, font=NR(9), fill=INK)
+    y += 30
+    # footer
+    d.line([(L, y), (R, y)], fill=INK, width=2)
+    foot = "Every story here happened, or was first reported, on Friday 20 November 2026."
+    d.text(((W - tw(d, foot, NB(10))) / 2, y + 5), foot, font=NB(10), fill=INK)
+    assert y + 20 <= H, y
+    img.save("entry.png")
+    print("wrote entry.png, bottom =", y + 20)
 
 if __name__ == "__main__":
     main()
